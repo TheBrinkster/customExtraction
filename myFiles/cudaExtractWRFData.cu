@@ -591,7 +591,7 @@ bool dirExists(string filePath){
 }
 
 
-void readData(FILE* f, string fileName, string filePath2){
+void readData(FILE* f, vector<string> strCurrentDay, string filePath2){
 
 
     int index = arrHourRange.at(0) + threadIdx.x;
