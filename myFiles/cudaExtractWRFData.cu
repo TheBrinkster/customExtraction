@@ -110,8 +110,14 @@ void handleInput(int, char**);
     way they are represented in the grib file. ONLY WORKS for coordinates in USA*/
 void convertLatLons();
 
+//function used to thread for each day
+void dayThread(vector<int>[]);
+
 // function to check the begin day vs the end day to see if a valid range has been passed
 bool checkDateRange(vector<int>, vector<int>);
+
+// function to find the amount of days between the begin date and the end date (inclusive of the inputted days)
+int findDateRange(vector<int>, vector<int>);
 
 // function to get the next day after the day passed
 vector<int> getNextDay(vector<int>);
@@ -150,19 +156,44 @@ int main(int argc, char*argv[]){
     }
     vector<int> intcurrentDay = beginDay;
 
+
+    FILE* f[intHourRange]; // use to open the file for each hour
+    vector<string> strCurrentDay = formatDay(intcurrentDay);
+    string filePath1 = filePath + strCurrentDay.at(0) + "/" + strCurrentDay.at(3) + "/" + "hrrr."+strCurrentDay.at(3) +".00.00.grib2";
+    try{
+        f = fopen(filePath1.c_str(), "rb"); //f[index]?
+        if(!f) throw(filePath2);
+    }
+    catch(string file){
+        printf("Error: could not open filename %s in directory %s", fileName.c_str(), file.c_str());
+        return;
+    }
+
+    int dayAmount = findDateRange(beginDay, endDay);
+    vector<int> dayArray[dayAmount];
+    dayArray[0] = beginDay;
+    for (i = 1; i <= dayAmount; i++){
+        dayArray[i] = getNextDay(dayArray[i-1]);
+    }
+
+    cudaMallocManaged (&f, 2 * dayAmount * intHourRange * sizeof(f))
+    <<<1, dayAmount>>>dayThread(dayArray);
+    cudaFree(f);
+
+    /*
     // for each day
     while(checkDateRange(intcurrentDay, endDay)){
-        vector<string> strCurrentDay = formatDay(intcurrentDay);
+        strCurrentDay = formatDay(intcurrentDay);
 
         // concatenate the file path
-        string filePath1 = filePath + strCurrentDay.at(0) + "/" + strCurrentDay.at(3) + "/";
+        filePath1 = filePath + strCurrentDay.at(0) + "/" + strCurrentDay.at(3) + "/";
         // check if the file path exists
         if(dirExists(filePath1) == false){
             fprintf(stderr, "Error: could not find directory %s\n", filePath1.c_str());
             exit(1);
         }
 
-        FILE* f[intHourRange]; // use to open the file for each hour
+        
         cudaMallocManaged(&f, 2*sizeof(f));
         <<<1, intHourRange>>>readData(*f, strCurrentDay, filePath1);
         cudaDeviceSynchronize();
@@ -177,7 +208,7 @@ int main(int argc, char*argv[]){
 
         }     
         intcurrentDay = getNextDay(intcurrentDay);
-    }
+    }*/
 
 
     // print out all the elements in all the station's data maps
@@ -482,6 +513,32 @@ void convertLatLons(){
     }
 }
 
+void dayThread(vector<int> dayArray[]){
+    int index = threadIdx.x;
+    string strCurrentDay = formatDay(dayArray[index]);
+
+    // concatenate the file path
+    string filePath1 = filePath + strCurrentDay.at(0) + "/" + strCurrentDay.at(3) + "/";
+    // check if the file path exists
+    if(dirExists(filePath1) == false){
+        fprintf(stderr, "Error: could not find directory %s\n", filePath1.c_str());
+        exit(1);
+    }
+        
+    cudaMallocManaged(&f, 2*sizeof(f));
+    <<<1, intHourRange>>>readData(*f, strCurrentDay, filePath1);
+    cudaDeviceSynchronize();
+    
+
+
+    for(int i=0;i<intHourRange;i++){ // for each hour, thread the file and filename
+          
+        string hour = hours[i];
+        mapData(strCurrentDay.at(3), hour);
+        writeData(strCurrentDay, hour);
+    }    
+}
+
 bool checkDateRange(vector<int> beginDate, vector<int> endDate){
 	// check that the array is of the size expected // WORKS
 	if((beginDate.size() != 3) || (endDate.size() != 3)) return false;
@@ -500,6 +557,63 @@ bool checkDateRange(vector<int> beginDate, vector<int> endDate){
 
 	return true;
 }
+
+// based on: https://www.geeksforgeeks.org/find-number-of-days-between-two-given-dates/
+int findDateRange(vector<int> beginDate, vector<int> endDate){
+    
+    int day1 = beginDate.at(2);
+    int month1 = beginDate.at(1);
+    int year1 = beginDate.at(0);
+
+    int day2 = begindDate.at(2);
+    int month2 = beginDate.at(1);
+    int year2 = beginDate.at(0);
+
+
+    // To store number of days in 
+    // all months from January to Dec.
+    const int monthDays[12]
+        = { 31, 28, 31, 30, 31, 30, 
+            31, 31, 30, 31, 30, 31 };
+    
+    // Count total number of days for the beginDate
+  
+    // initialize count using years and day
+    long int n1 =  year1 * 365 + day1;
+  
+    // Add days for months in given date
+    for (int i = 0; i < month1 - 1; i++)
+        n1 += monthDays[i];
+  
+    // Since every leap year is of 366 days,
+    // Add a day for every leap year
+    int leapYears1 = year1;
+    if (month1 <= 2){
+        leapYears1--;
+    }
+    leapYears1 = (leapYears1/4) - (leapYears1/100) + (leapYears1/400);
+    n1 += leapYears1;
+  
+    // SIMILARLY, COUNT TOTAL NUMBER OF
+    // DAYS BEFORE 'dt2'
+  
+    long int n2 = year2 * 365 + day2;
+    for (int i = 0; i < month2 - 1; i++)
+        n2 += monthDays[i];
+
+    int leapYears2 = year2;
+    if (month1 <= 2){
+        leapYears2--;
+    }
+    leapYears2 = (leapYears2/4) - (leapYears2/100) + (leapYears2/400);
+    n1 += leapYears2;    
+    
+  
+    // return difference between two counts
+    return (n2 - n1);
+
+}
+
 
 // based on: https://www.studymite.com/cpp/examples/program-to-print-the-next-days-date-month-year-cpp/
 vector<int> getNextDay(vector<int> beginDate){
@@ -591,15 +705,15 @@ bool dirExists(string filePath){
 }
 
 
-void readData(FILE* f, vector<string> strCurrentDay, string filePath2){
+void readData(FILE* f, vector<string> strCurrentDay, string filePath1){
 
 
     int index = arrHourRange.at(0) + threadIdx.x;
     if (index > 10){
-        string fileName = "hrrr."+strCurrentDay.at(3)+"."+index+".00.grib2";
+        string fileName = "hrrr."+strCurrentDay.at(3)+"."+to_string(index)+".00.grib2";
     }
     else{
-        string fileName = "hrrr."+strCurrentDay.at(3)+".0"+index+".00.grib2";
+        string fileName = "hrrr."+strCurrentDay.at(3)+".0"+to_string(index)+".00.grib2";
     }
     string filePath2 = filePath1 + fileName;
 
@@ -608,7 +722,7 @@ void readData(FILE* f, vector<string> strCurrentDay, string filePath2){
     // cout << "Opening file: " << filePath2 << endl;
     //try to open the file
     try{
-        f = fopen(filePath2.c_str(), "rb");
+        f = fopen(filePath2.c_str(), "rb"); //f[index]?
         if(!f) throw(filePath2);
     }
     catch(string file){
